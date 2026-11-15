@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { randomBytes } from 'node:crypto';
 import { pool } from '../db';
+import { redis } from '../redis';
 
 export const links = Router();
 
@@ -44,13 +45,30 @@ links.post('/api/links', async (req, res) => {
   res.status(500).json({ error: 'could not generate a unique code' });
 });
 
-// Redirect
+// Redirect (cache-aside: try Redis first, fall back to Postgres)
+const CACHE_TTL = 3600; // seconds
+
 links.get('/:code', async (req, res) => {
+  const { code } = req.params;
+  const key = `link:${code}`;
+
+  const cached = await redis.get(key);
+  if (cached) {
+    // Count the click without making the visitor wait for Postgres
+    pool.query('UPDATE links SET clicks = clicks + 1 WHERE code = $1', [code])
+      .catch((err) => console.error('click update failed', err));
+    res.set('X-Cache', 'HIT');
+    return res.redirect(302, cached);
+  }
+
   const { rows } = await pool.query(
     'UPDATE links SET clicks = clicks + 1 WHERE code = $1 RETURNING url',
-    [req.params.code],
+    [code],
   );
   if (!rows[0]) return res.status(404).json({ error: 'not found' });
+
+  await redis.set(key, rows[0].url, 'EX', CACHE_TTL);
+  res.set('X-Cache', 'MISS');
   res.redirect(302, rows[0].url);
 });
 
