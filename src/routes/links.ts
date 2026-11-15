@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { randomBytes } from 'node:crypto';
 import { pool } from '../db';
 import { redis } from '../redis';
+import { rateLimit } from '../rateLimit';
 
 export const links = Router();
 
@@ -18,7 +19,7 @@ function isHttpUrl(value: unknown): value is string {
 }
 
 // Create a short link
-links.post('/api/links', async (req, res) => {
+links.post('/api/links',rateLimit,  async (req, res) => {
   const { url, code: custom } = req.body ?? {};
 
   if (!isHttpUrl(url)) {
