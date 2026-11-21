@@ -85,3 +85,16 @@ describe('GET /api/links/:code/stats', () => {
     expect(res.body.clicks).toBe(1);
   });
 });
+
+describe('GUI', () => {
+  it('serves the page at /', async () => {
+    const res = await request(app).get('/');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/html/);
+  });
+
+  it('serves the script', async () => {
+    const res = await request(app).get('/app.js');
+    expect(res.status).toBe(200);
+  });
+});
