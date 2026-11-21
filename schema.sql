@@ -5,3 +5,5 @@ CREATE TABLE IF NOT EXISTS links (
   clicks     BIGINT NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE links ADD COLUMN IF NOT EXISTS edit_token_hash CHAR(64);

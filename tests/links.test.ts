@@ -98,3 +98,51 @@ describe('GUI', () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe('PATCH /api/links/:code', () => {
+  async function createLink() {
+    const res = await request(app).post('/api/links').set(json).send({ url: 'https://example.com', code: 'hello' });
+    return res.body.editToken as string;
+  }
+
+  it('returns an edit token when a link is created', async () => {
+    const token = await createLink();
+    expect(token).toMatch(/^[A-Za-z0-9_-]{32}$/);
+  });
+
+  it('changes the destination and clears the cache', async () => {
+    const token = await createLink();
+    await request(app).get('/hello'); // puts the old URL in Redis
+
+    const edit = await request(app)
+      .patch('/api/links/hello')
+      .set(json)
+      .set('authorization', `Bearer ${token}`)
+      .send({ url: 'https://example.org' });
+    expect(edit.status).toBe(200);
+    expect(edit.body.url).toBe('https://example.org');
+
+    const visit = await request(app).get('/hello');
+    expect(visit.headers['x-cache']).toBe('MISS');
+    expect(visit.headers.location).toBe('https://example.org');
+  });
+
+  it('refuses a wrong token with 403', async () => {
+    await createLink();
+    const res = await request(app)
+      .patch('/api/links/hello')
+      .set(json)
+      .set('authorization', 'Bearer not-the-right-token')
+      .send({ url: 'https://evil.example' });
+    expect(res.status).toBe(403);
+
+    const visit = await request(app).get('/hello');
+    expect(visit.headers.location).toBe('https://example.com');
+  });
+
+  it('refuses a missing token with 401', async () => {
+    await createLink();
+    const res = await request(app).patch('/api/links/hello').set(json).send({ url: 'https://example.org' });
+    expect(res.status).toBe(401);
+  });
+});

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { pool } from '../db';
 import { redis } from '../redis';
 import { rateLimit } from '../rateLimit';
@@ -7,6 +7,10 @@ import { rateLimit } from '../rateLimit';
 export const links = Router();
 
 const CODE_RE = /^[A-Za-z0-9_-]{3,16}$/;
+
+function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
 
 function isHttpUrl(value: unknown): value is string {
   if (typeof value !== 'string') return false;
@@ -19,7 +23,7 @@ function isHttpUrl(value: unknown): value is string {
 }
 
 // Create a short link
-links.post('/api/links',rateLimit,  async (req, res) => {
+links.post('/api/links', rateLimit, async (req, res) => {
   const { url, code: custom } = req.body ?? {};
 
   if (!isHttpUrl(url)) {
@@ -29,14 +33,16 @@ links.post('/api/links',rateLimit,  async (req, res) => {
     return res.status(400).json({ error: 'code must be 3-16 chars: letters, digits, _ or -' });
   }
 
+  const editToken = randomBytes(24).toString('base64url');
+
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = custom ?? randomBytes(5).toString('base64url');
     try {
       const { rows } = await pool.query(
-        'INSERT INTO links (code, url) VALUES ($1, $2) RETURNING code, url, created_at',
-        [code, url],
+        'INSERT INTO links (code, url, edit_token_hash) VALUES ($1, $2, $3) RETURNING code, url, created_at',
+        [code, url, hashToken(editToken)],
       );
-      return res.status(201).json(rows[0]);
+      return res.status(201).json({ ...rows[0], editToken });
     } catch (err: any) {
       if (err.code !== '23505') throw err; // 23505 = unique_violation
       if (custom) return res.status(409).json({ error: 'code already taken' });
@@ -44,6 +50,32 @@ links.post('/api/links',rateLimit,  async (req, res) => {
     }
   }
   res.status(500).json({ error: 'could not generate a unique code' });
+});
+
+// Edit a link's destination (needs the edit token from creation)
+links.patch('/api/links/:code', rateLimit, async (req, res) => {
+  const { code } = req.params;
+  const { url } = req.body ?? {};
+  const auth = req.get('authorization') ?? '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+
+  if (!token) {
+    return res.status(401).json({ error: 'edit token required' });
+  }
+  if (!isHttpUrl(url)) {
+    return res.status(400).json({ error: 'url must be a valid http(s) URL' });
+  }
+
+  const { rows } = await pool.query(
+    'UPDATE links SET url = $1 WHERE code = $2 AND edit_token_hash = $3 RETURNING code, url',
+    [url, code, hashToken(token)],
+  );
+  if (!rows[0]) {
+    return res.status(403).json({ error: 'wrong code or edit token' });
+  }
+
+  await redis.del(`link:${code}`);
+  res.json(rows[0]);
 });
 
 // Redirect (cache-aside: try Redis first, fall back to Postgres)
