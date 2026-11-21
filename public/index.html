@@ -34,6 +34,25 @@
       </form>
       <p id="stats-result" role="status"></p>
     </section>
+
+    <section>
+      <h2>Edit a link</h2>
+      <form id="edit-form">
+        <label>Short code
+          <select id="edit-code" required>
+            <option value="">Choose a link…</option>
+          </select>
+        </label>
+        <label>New long URL
+          <input id="edit-url" type="url" placeholder="https://example.com/new/page" required>
+        </label>
+        <label>Edit token
+          <input id="edit-token" type="password" required>
+        </label>
+        <button type="submit">Save</button>
+      </form>
+      <p id="edit-result" role="status"></p>
+    </section>
   </main>
   <script src="/app.js"></script>
 </body>

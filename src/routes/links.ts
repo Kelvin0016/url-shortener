@@ -52,6 +52,15 @@ links.post('/api/links', rateLimit, async (req, res) => {
   res.status(500).json({ error: 'could not generate a unique code' });
 });
 
+// List links, newest first. There are no accounts yet, so this list is public:
+// it must never include the edit token hash.
+links.get('/api/links', async (_req, res) => {
+  const { rows } = await pool.query(
+    'SELECT code, url, clicks::int AS clicks, created_at FROM links ORDER BY created_at DESC LIMIT 100',
+  );
+  res.json(rows);
+});
+
 // Edit a link's destination (needs the edit token from creation)
 links.patch('/api/links/:code', rateLimit, async (req, res) => {
   const { code } = req.params;

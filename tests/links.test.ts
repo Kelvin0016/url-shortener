@@ -146,3 +146,16 @@ describe('PATCH /api/links/:code', () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe('GET /api/links', () => {
+  it('lists links without exposing edit tokens', async () => {
+    await request(app).post('/api/links').set(json).send({ url: 'https://example.com', code: 'hello' });
+
+    const res = await request(app).get('/api/links');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].code).toBe('hello');
+    expect(res.body[0]).not.toHaveProperty('edit_token_hash');
+    expect(res.body[0]).not.toHaveProperty('editToken');
+  });
+});
